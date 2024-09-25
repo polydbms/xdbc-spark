@@ -40,7 +40,13 @@ sbt package && /spark/bin/spark-submit  \
 ```
 
 # Run XDBC
+## server
 
+```shell
+./xdbc-server -f 1 --bufferpool-size=65536 --system=postgres --buffer-size=1024 --read-parallelism=8 --deser-parallelism=4
+```
+
+# client
 ```shell
 sbt package && /spark/bin/spark-submit  \
  --class "example.ReadPGXDBC"   \
@@ -52,6 +58,6 @@ sbt package && /spark/bin/spark-submit  \
  --conf spark.memory.storageFraction=0.8 \
  --conf spark.driver.memory=16g \
  --conf spark.executor.extraJavaOptions="-XX:+UseG1GC"   \
- /app/target/spark3io-1.0.jar
+ /app/target/spark3io-1.0.jar lineitem_sf10
 
 ```

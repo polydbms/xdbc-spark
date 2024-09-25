@@ -1,65 +1,62 @@
 package xdbc
 
+import example.Schemata
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.catalog.{SupportsRead, Table, TableCapability, TableProvider}
 import org.apache.spark.sql.connector.expressions.Transform
 import org.apache.spark.sql.connector.read.{Batch, InputPartition, PartitionReader, PartitionReaderFactory, Scan, ScanBuilder}
-import org.apache.spark.sql.types.{DoubleType, IntegerType, StructField, StructType, StringType}
+import org.apache.spark.sql.types.{DoubleType, IntegerType, StringType, StructField, StructType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
+import org.apache.spark.unsafe.types.UTF8String
 
 import java.nio.{ByteBuffer, ByteOrder}
 import java.util
-
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success}
+import scala.collection.JavaConverters._
 
 class XDBCReader extends TableProvider {
 
-  val lineitemSchema = StructType(Seq(
-    StructField("l_orderkey", IntegerType),
-    StructField("l_partkey", IntegerType),
-    StructField("l_suppkey", IntegerType),
-    StructField("l_linenumber", IntegerType),
-    StructField("l_quantity", DoubleType),
-    StructField("l_extendedprice", DoubleType),
-    StructField("l_discount", DoubleType),
-    StructField("l_tax", DoubleType),
-    StructField("l_returnflag", StringType),
-    StructField("l_linestatus", StringType),
-    StructField("l_shipdate", StringType),
-    StructField("l_commitdate", StringType),
-    StructField("l_receiptdate", StringType),
-    StructField("l_shipinstruct", StringType),
-    StructField("l_shipmode", StringType),
-    StructField("l_comment", StringType)
-  ))
+  override def inferSchema(options: CaseInsensitiveStringMap): StructType = {
+    val tableName = options.get("path")
+    Schemata.getSchemaStruct(tableName)
+  }
 
-
-  override def inferSchema(options: CaseInsensitiveStringMap): StructType = lineitemSchema
-
-  override def getTable(schema: StructType, partitioning: Array[Transform], properties: util.Map[String, String]): Table = new XDBCTable()
+  override def getTable(schema: StructType, partitioning: Array[Transform], properties: util.Map[String, String]): Table = {
+    val tableName = properties.get("path")
+    //println(s"In getTable passing ${tableName}")
+    new XDBCTable(tableName)
+  }
 }
 
-class SimplePartition extends InputPartition
+class XDBCPartition extends InputPartition
 
-class SimplePartitionReaderFactory extends PartitionReaderFactory {
-  override def createReader(partition: InputPartition): PartitionReader[InternalRow] = new SimplePartitionReader()
+class XDBCPartitionReaderFactory(tableName: String) extends PartitionReaderFactory {
+  override def createReader(partition: InputPartition): PartitionReader[InternalRow] = new XDBCPartitionReader(tableName)
 }
 
-class SimplePartitionReader extends PartitionReader[InternalRow] {
+class XDBCPartitionReader(tableName: String) extends PartitionReader[InternalRow] {
 
-  def getFixedString(bb: ByteBuffer, size: Int): String = {
+  println(s"XDBCPartitionReader got table ${tableName}")
+
+  def getFixedString(bb: ByteBuffer, size: Int): UTF8String = {
+    val bytes = new Array[Byte](size)
+    bb.get(bytes)
+    UTF8String.fromBytes(bytes).trim()
+  }
+  /*def getFixedString(bb: ByteBuffer, size: Int): String = {
     val bytes = new Array[Byte](size)
     bb.get(bytes)
     new String(bytes).trim
-  }
+  }*/
 
   //TODO: handle these dynamically based on schema and introduce params
-  val BUFFER_SIZE = 6355
+  val BUFFER_SIZE = 63556
   val TUPLE_SIZE = 165
   val total_tuples = 59986052L
   var totalRead = new java.util.concurrent.atomic.AtomicLong
+
 
   val bb = ByteBuffer.allocateDirect(BUFFER_SIZE * TUPLE_SIZE).order(ByteOrder.nativeOrder())
 

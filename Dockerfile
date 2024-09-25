@@ -33,7 +33,9 @@ RUN mkdir /tmp/spark-events
 
 # Download postgres driver for spark
 RUN curl -o /spark/jars/postgresql-42.7.3.jar https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.3/postgresql-42.7.3.jar
-
+RUN curl -o /spark/jars/play-json_2.12-2.9.2.jar https://repo.akka.io/maven/com/typesafe/play/play-json_2.12/2.9.2/play-json_2.12-2.9.2.jar
+RUN curl -o /spark/jars/play-iteratees_2.12-2.9.2.jar https://repo.akka.io/maven/com/typesafe/play/play-iteratees_2.12/2.9.2/play-iteratees_2.12-2.9.2.jar
+RUN curl -o /spark/jars/play-functional_2.12-2.9.2.jar https://repo.akka.io/maven/com/typesafe/play/play-functional_2.12/2.9.2/play-functional_2.12-2.9.2.jar
 
 # Set JAVA_HOME environment variable
 ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
