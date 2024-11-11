@@ -10,10 +10,10 @@ extern "C" {
 /*
  * Class:      xdbc_XClient
  * Method:     initialize
- * Signature:  (Ljava/lang/String;)J
+ * Signature:  (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JIIIIII)J
  */
 JNIEXPORT jlong JNICALL Java_xdbc_XClient_initialize
-  (JNIEnv *, jobject, jstring);
+  (JNIEnv *, jobject, jstring, jstring, jstring, jlong, jint, jint, jint, jint, jint, jint);
 
 /*
  * Class:      xdbc_XClient

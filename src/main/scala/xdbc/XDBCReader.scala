@@ -1,6 +1,7 @@
 package xdbc
 
-import example.Schemata
+import example.Schemata.getSchemaStruct
+import example.{SchemaConverter, Schemata}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.catalog.{SupportsRead, Table, TableCapability, TableProvider}
 import org.apache.spark.sql.connector.expressions.Transform
@@ -26,82 +27,82 @@ class XDBCReader extends TableProvider {
   override def getTable(schema: StructType, partitioning: Array[Transform], properties: util.Map[String, String]): Table = {
     val tableName = properties.get("path")
     //println(s"In getTable passing ${tableName}")
-    new XDBCTable(tableName)
+    new XDBCTable(XDBCRuntimeEnv.fromOptions(properties))
   }
 }
 
 class XDBCPartition extends InputPartition
 
-class XDBCPartitionReaderFactory(tableName: String) extends PartitionReaderFactory {
-  override def createReader(partition: InputPartition): PartitionReader[InternalRow] = new XDBCPartitionReader(tableName)
+class XDBCPartitionReaderFactory(xdbcEnv: XDBCRuntimeEnv) extends PartitionReaderFactory {
+  override def createReader(partition: InputPartition): PartitionReader[InternalRow] = new XDBCPartitionReader(xdbcEnv)
 }
 
-class XDBCPartitionReader(tableName: String) extends PartitionReader[InternalRow] {
+class XDBCPartitionReader(xdbcEnv: XDBCRuntimeEnv) extends PartitionReader[InternalRow] {
 
-  println(s"XDBCPartitionReader got table ${tableName}")
-
-  def getFixedString(bb: ByteBuffer, size: Int): UTF8String = {
-    val bytes = new Array[Byte](size)
-    bb.get(bytes)
-    UTF8String.fromBytes(bytes).trim()
-  }
-  /*def getFixedString(bb: ByteBuffer, size: Int): String = {
-    val bytes = new Array[Byte](size)
-    bb.get(bytes)
-    new String(bytes).trim
-  }*/
+  println(s"XDBCPartitionReader got table ${xdbcEnv.tableName}")
 
   //TODO: handle these dynamically based on schema and introduce params
-  val BUFFER_SIZE = 63556
-  val TUPLE_SIZE = 165
-  val total_tuples = 59986052L
+
+  val TUPLE_SIZE = SchemaConverter.calculateTupleSizeInBytes(xdbcEnv.tableName)
+  val total_tuples = Schemata.schemaRowsMap.getOrElse(xdbcEnv.tableName, throw new IllegalArgumentException(s"Table name '$xdbcEnv.tableName' not found in schemaTupleSizeMap."))
   var totalRead = new java.util.concurrent.atomic.AtomicLong
 
 
-  val bb = ByteBuffer.allocateDirect(BUFFER_SIZE * TUPLE_SIZE).order(ByteOrder.nativeOrder())
+  val bb = ByteBuffer.allocateDirect(xdbcEnv.buffer_size * 1024).order(ByteOrder.nativeOrder())
 
   val xc = new XClient("spark-XDBC")
-  var pointer = xc.initialize("spark-XDBC")
+  var pointer = xc.initialize(xdbcEnv.server_host, "spark-XDBC", xdbcEnv.tableName, xdbcEnv.transfer_id, xdbcEnv.iformat, xdbcEnv.buffer_size, xdbcEnv.bufferpool_size, xdbcEnv.rcv_par, xdbcEnv.decomp_par, xdbcEnv.write_par)
   /*val f = Future {
     xc.startReceiving0(pointer, "lineitem_sf10")
   }*/
-  xc.startReceiving0(pointer, "lineitem_sf10")
+  xc.startReceiving0(pointer, xdbcEnv.tableName)
   var curBufId = xc.getBuffer0(pointer, bb, TUPLE_SIZE)
   bb.rewind()
+  val extractRowForCol = Schemata.generateRowExtractorForCol(xdbcEnv.tableName)
+  val extractRow = Schemata.generateRowExtractorforRow(xdbcEnv.tableName)
+  val fieldSizeMap = SchemaConverter.convertJsonToFieldSizeMap(xdbcEnv.tableName)
+  val schema = getSchemaStruct(xdbcEnv.tableName)
+  var bufferTupleIndex = 0
+  var tuplesPerBuffer = bb.limit() / TUPLE_SIZE
+  var currentOffset = 0
 
-  override def next(): Boolean = totalRead.get() < total_tuples
+  override def next(): Boolean = {
+    //println(s"${totalRead.get()} < ${total_tuples} (${totalRead.get() < total_tuples})")
+    totalRead.get() < total_tuples
+  }
 
   override def get(): InternalRow = {
 
-    val l_orderkey = bb.getInt()
-    val l_partkey = bb.getInt()
-    val l_suppkey = bb.getInt()
-    val l_linenumber = bb.getInt()
-    val l_quantity = bb.getDouble()
-    val l_extendedprice = bb.getDouble()
-    val l_discount = bb.getDouble()
-    val l_tax = bb.getDouble()
-    val l_returnflag = getFixedString(bb, 1)
-    val l_linestatus = getFixedString(bb, 1)
-    val l_shipdate = getFixedString(bb, 11)
-    val l_commitdate = getFixedString(bb, 11)
-    val l_receiptdate = getFixedString(bb, 11)
-    val l_shipinstruct = getFixedString(bb, 26)
-    val l_shipmode = getFixedString(bb, 11)
-    val l_comment = getFixedString(bb, 45)
+    //val row = extractRow(bb)
+    var row: InternalRow = null
+    if (xdbcEnv.iformat == 1) {
+      row = extractRow(bb)
+    }
+    else {
+      row = extractRowForCol(bb, bufferTupleIndex, tuplesPerBuffer)
+      //TODO: Avoid counting by setting the buffer position manually in generated code
+      bufferTupleIndex += 1
+
+    }
+
 
     totalRead.getAndIncrement()
 
-    if (!bb.hasRemaining && totalRead.get() < total_tuples) {
+    if ((xdbcEnv.iformat == 2) & (bufferTupleIndex == tuplesPerBuffer) ||
+      (xdbcEnv.iformat == 1) && (!bb.hasRemaining && totalRead.get() < total_tuples)) {
       //xc.markBufferAsRead0(pointer, curBufId)
+      //println("Entered buffer finished case")
 
       if (xc.hasNext0(pointer) == 1) {
-        var curBufId = xc.getBuffer0(pointer, bb, TUPLE_SIZE)
+        curBufId = xc.getBuffer0(pointer, bb, TUPLE_SIZE)
+        tuplesPerBuffer = bb.limit() / TUPLE_SIZE
+        bufferTupleIndex = 0
+        currentOffset = 0
 
-        val time = s"[${java.time.LocalDateTime.now.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"))}]"
+        //val time = s"[${java.time.LocalDateTime.now.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"))}]"
         if (curBufId < 0)
           //println(f"${time} Got ${curBufId} while ${totalRead}/${total_tuples}")
-          if (bb.capacity() != TUPLE_SIZE * BUFFER_SIZE || bb.limit() != TUPLE_SIZE * BUFFER_SIZE) {
+          if (bb.capacity() != TUPLE_SIZE * xdbcEnv.buffer_size || bb.limit() != TUPLE_SIZE * xdbcEnv.buffer_size) {
 
             //println(s"${time} [Spark] before buf ${bb.position()} / ${bb.limit()} of ${bb.capacity()}")
             bb.rewind()
@@ -111,28 +112,7 @@ class XDBCPartitionReader(tableName: String) extends PartitionReader[InternalRow
       }
       bb.rewind()
     }
-
-
-    val test = InternalRow(
-      l_orderkey,
-      l_partkey,
-      l_suppkey,
-      l_linenumber,
-      l_quantity,
-      l_extendedprice,
-      l_discount,
-      l_tax,
-      l_returnflag,
-      l_linestatus,
-      l_shipdate,
-      l_commitdate,
-      l_receiptdate,
-      l_shipinstruct,
-      l_shipmode,
-      l_comment
-    )
-    //println(test)
-    test
+    row
   }
 
   override def close(): Unit = {

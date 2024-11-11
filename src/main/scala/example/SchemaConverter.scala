@@ -42,4 +42,27 @@ object SchemaConverter {
     // Create StructType from fields
     StructType(fields)
   }
+
+  def convertJsonToFieldSizeMap(name: String): Map[String, Int] = {
+    val jsonString = readFileAsString(s"/xdbc-client/tests/schemas/${name}.json")
+    val json = Json.parse(jsonString)
+    val columns = json.as[List[ColumnDefinition]]
+
+    // Collect sizes for CHAR and STRING fields into a map
+    columns.collect {
+      case col if col.`type` == "CHAR" || col.`type` == "STRING" => col.name -> col.size
+    }.toMap
+  }
+
+  def calculateTupleSizeInBytes(name: String): Int = {
+    val jsonString = readFileAsString(s"/xdbc-client/tests/schemas/${name}.json")
+    val json = Json.parse(jsonString)
+    val columns = json.as[List[ColumnDefinition]]
+
+    // Sum the sizes of all columns directly
+    columns.map(_.size).sum
+  }
+
+
+
 }

@@ -47,6 +47,14 @@ ENV PATH=$SPARK_HOME/bin:$PATH
 
 # Create a directory for the project inside the container
 WORKDIR /app
+COPY src /app/src
+COPY project/build.properties /app/project/
+COPY project/plugins.sbt /app/project/
+COPY run_xdbc_spark.sh /app
+COPY build.sbt /app
+
+#RUN sbt javah
+RUN sbt package
 
 # Mount your working directory later when running the container
 # This will allow you to use your local code with this image

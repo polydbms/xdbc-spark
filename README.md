@@ -61,3 +61,14 @@ sbt package && /spark/bin/spark-submit  \
  /app/target/spark3io-1.0.jar lineitem_sf10
 
 ```
+
+
+## or just
+```shell
+docker run -d -it --rm \
+  --name xdbcspark \
+  --network xdbc-net \
+  -p 4040:4040 \
+  -p 18080:18080 \
+  spark3io-sbt:latest
+```

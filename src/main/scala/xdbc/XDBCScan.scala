@@ -6,9 +6,9 @@ import org.apache.spark.sql.types.{DoubleType, IntegerType, StringType, StructFi
 
 import scala.collection.JavaConverters._
 
-class XDBCScan(tableName: String) extends Scan with Batch {
+class XDBCScan(xdbcEnv: XDBCRuntimeEnv) extends Scan with Batch {
 
-  override def readSchema(): StructType = Schemata.getSchemaStruct(tableName)
+  override def readSchema(): StructType = Schemata.getSchemaStruct(xdbcEnv.tableName)
   /*  override def readSchema(): StructType = StructType(Seq(
       StructField("l_orderkey", IntegerType),
       StructField("l_partkey", IntegerType),
@@ -34,5 +34,5 @@ class XDBCScan(tableName: String) extends Scan with Batch {
     Array(new XDBCPartition())
   }
 
-  override def createReaderFactory(): PartitionReaderFactory = new XDBCPartitionReaderFactory(tableName)
+  override def createReaderFactory(): PartitionReaderFactory = new XDBCPartitionReaderFactory(xdbcEnv)
 }
