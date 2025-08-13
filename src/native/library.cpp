@@ -63,6 +63,7 @@ JNIEXPORT jlong JNICALL Java_xdbc_XClient_initialize
     xdbcEnv->sleep_time = std::chrono::milliseconds(1);
     xdbcEnv->rcv_parallelism = rcv_par;
     xdbcEnv->decomp_parallelism = decomp_par;
+    xdbcEnv->ser_parallelism = write_par;
     xdbcEnv->write_parallelism = write_par;
     xdbcEnv->transfer_id = transfer_id;
 
