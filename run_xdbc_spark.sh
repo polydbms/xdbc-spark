@@ -64,6 +64,7 @@ fi
 spark-submit \
   --class "example.ReadPGXDBC" \
   --master "local" \
+  --packages com.typesafe.play:play-json_2.12:2.9.4 \
   --conf spark.eventLog.enabled=true \
   --num-executors 1 \
   --executor-cores 8 \
